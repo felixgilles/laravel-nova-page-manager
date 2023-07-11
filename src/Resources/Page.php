@@ -5,8 +5,6 @@ namespace Novius\LaravelNovaPageManager\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Laravel\Nova\Fields\BelongsTo;
-use Laravel\Nova\Fields\Boolean;
-use Laravel\Nova\Fields\DateTime;
 use Laravel\Nova\Fields\Field;
 use Laravel\Nova\Fields\Heading;
 use Laravel\Nova\Fields\ID;
@@ -18,12 +16,19 @@ use Laravel\Nova\Fields\Textarea;
 use Laravel\Nova\Http\Requests\NovaRequest;
 use Laravel\Nova\Panel;
 use Laravel\Nova\Resource;
-use Novius\LaravelNovaContexts\Fields\ContextField;
-use Novius\LaravelNovaContexts\Filters\ContextFilter;
-use Novius\LaravelNovaContexts\LaravelNovaContexts;
-use Novius\LaravelNovaPageManager\Actions\TranslatePage;
-use Novius\LaravelNovaPageManager\Filters\PublishedFilter;
+use Novius\LaravelNovaFieldPreview\Nova\Fields\OpenPreview;
 use Novius\LaravelNovaPageManager\Helpers\TemplatesHelper;
+use Novius\LaravelNovaPublishable\Nova\Fields\ExpiredAt;
+use Novius\LaravelNovaPublishable\Nova\Fields\PublicationBadge;
+use Novius\LaravelNovaPublishable\Nova\Fields\PublicationStatus as PublicationStatusField;
+use Novius\LaravelNovaPublishable\Nova\Fields\PublishedAt;
+use Novius\LaravelNovaPublishable\Nova\Fields\PublishedFirstAt;
+use Novius\LaravelNovaPublishable\Nova\Filters\PublicationStatus;
+use Novius\LaravelNovaTranslatable\Nova\Actions\Translate;
+use Novius\LaravelNovaTranslatable\Nova\Cards\Locales;
+use Novius\LaravelNovaTranslatable\Nova\Fields\Locale;
+use Novius\LaravelNovaTranslatable\Nova\Fields\Translations;
+use Novius\LaravelNovaTranslatable\Nova\Filters\LocaleFilter;
 
 class Page extends Resource
 {
@@ -50,6 +55,13 @@ class Page extends Resource
      */
     public static $search = ['title'];
 
+    public static $with = ['translations'];
+
+    public function availableLocales(): array
+    {
+        return config('laravel-nova-page-manager.locales', []);
+    }
+
     /**
      * Get the fields displayed by the resource.
      */
@@ -66,6 +78,7 @@ class Page extends Resource
 
         return [
             ID::make(__('ID'), 'id')->sortable(),
+            OpenPreview::make(trans('laravel-nova-page-manager::page.preview_link')),
 
             new Panel(trans('laravel-nova-page-manager::page.panel_main'), $this->mainFields()),
 
@@ -79,7 +92,6 @@ class Page extends Resource
 
     protected function mainFields(): array
     {
-        $locales = config('laravel-nova-page-manager.locales', []);
         $templates = TemplatesHelper::getTemplates()->mapWithKeys(function ($template) {
             return [
                 $template['template']->templateUniqueKey() => $template['template']->templateName(),
@@ -88,19 +100,8 @@ class Page extends Resource
 
         return [
             Text::make(trans('laravel-nova-page-manager::page.title'), function () {
-                $previewUrl = $this->resource->previewUrl();
-                if (empty($previewUrl)) {
-                    return Str::limit($this->resource->title, self::TITLE_TRUNCATE_LIMIT_CHARS);
-                }
-
-                return sprintf(
-                    '<a class="link-default" href="%s" target="_blank" title="%s">%s</a>',
-                    $previewUrl,
-                    e($this->resource->title),
-                    e(Str::limit($this->resource->title, self::TITLE_TRUNCATE_LIMIT_CHARS))
-                );
+                return Str::limit($this->resource->title, self::TITLE_TRUNCATE_LIMIT_CHARS);
             })
-                ->asHtml()
                 ->onlyOnIndex(),
 
             Text::make(trans('laravel-nova-page-manager::page.title'), 'title')
@@ -113,20 +114,8 @@ class Page extends Resource
                 ->creationRules('required', 'string', 'max:191', 'pageSlug', 'uniquePage:{{resourceLocale}}')
                 ->updateRules('required', 'string', 'max:191', 'pageSlug', 'uniquePage:{{resourceLocale}},{{resourceId}}'),
 
-            ContextField::make(trans('laravel-nova-page-manager::page.locale'), 'locale')
-                ->rules('in:'.implode(',', array_keys($locales)))
-                ->hideFromIndex(function () use ($locales) {
-                    return count($locales) < 2;
-                })
-                ->hideWhenCreating(function () use ($locales) {
-                    return count($locales) < 2;
-                })
-                ->hideWhenUpdating(function () use ($locales) {
-                    return count($locales) < 2;
-                })
-                ->hideFromDetail(function () use ($locales) {
-                    return count($locales) < 2;
-                }),
+            Locale::make(),
+            Translations::make(),
 
             BelongsTo::make(trans('laravel-nova-page-manager::page.parent'), 'parent', static::class)
                 ->nullable()
@@ -139,18 +128,11 @@ class Page extends Resource
                 ->rules('required', 'in:'.implode(',', array_keys($templates)))
                 ->readonly(fn () => $this->model()->exists),
 
-            Boolean::make(trans('laravel-nova-page-manager::page.is_published'), function () {
-                return $this->resource->isPublished();
-            })->exceptOnForms(),
-
-            DateTime::make(trans('laravel-nova-page-manager::page.publication_date'), 'publication_date')
-                ->nullable()
-                ->rules('nullable', 'date'),
-
-            DateTime::make(trans('laravel-nova-page-manager::page.publication_end_date'), 'end_publication_date')
-                ->nullable()
-                ->rules('nullable', 'after:publication_date'),
-
+            PublicationBadge::make(trans('laravel-nova-page-manager::page.publication')),
+            PublicationStatusField::make()->onlyOnForms(),
+            PublishedFirstAt::make()->onlyOnForms(),
+            PublishedAt::make()->onlyOnForms(),
+            ExpiredAt::make()->onlyOnForms(),
         ];
     }
 
@@ -251,7 +233,7 @@ class Page extends Resource
     public function cards(Request $request): array
     {
         return [
-            (new LaravelNovaContexts())->dynamicHeight(),
+            new Locales(),
         ];
     }
 
@@ -261,8 +243,8 @@ class Page extends Resource
     public function filters(Request $request): array
     {
         return [
-            new ContextFilter($this->model()),
-            new PublishedFilter(),
+            new LocaleFilter(),
+            new PublicationStatus(),
         ];
     }
 
@@ -279,13 +261,11 @@ class Page extends Resource
      */
     public function actions(Request $request): array
     {
-        $locales = config('laravel-nova-page-manager.locales', []);
-        if (count($locales) <= 1) {
-            return [];
-        }
-
         return [
-            (new TranslatePage())->onlyInline(),
+            Translate::make()
+                ->titleField('title')
+                ->titleLabel('title')
+                ->redirectAfterTranslate(false),
         ];
     }
 

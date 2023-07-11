@@ -16,8 +16,11 @@
     ],
     "require": {
         "php": ">=8.1",
+        "illuminate/support": "^8.83.4|^9.3.1|^10.0",
         "laravel/nova": "^4.0",
-        "novius/laravel-nova-contexts": "^2.0",
+        "novius/laravel-nova-field-preview": "^1.0.0",
+        "novius/laravel-nova-publishable": "dev-main",
+        "novius/laravel-nova-translatable": "dev-main",
         "spatie/laravel-sluggable": "^3.4"
     },
     "require-dev": {
@@ -47,6 +50,14 @@
         {
             "type": "composer",
             "url": "https://nova.laravel.com"
+        },
+        {
+            "type": "vcs",
+            "url": "git@github.com:novius/laravel-nova-translatable.git"
+        },
+        {
+            "type": "vcs",
+            "url": "git@github.com:novius/laravel-translatable.git"
         }
     ],
     "config": {
