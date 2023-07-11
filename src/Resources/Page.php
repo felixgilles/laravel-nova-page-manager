@@ -99,18 +99,16 @@ class Page extends Resource
         })->all();
 
         return [
-            Text::make(trans('laravel-nova-page-manager::page.title'), function () {
-                return Str::limit($this->resource->title, self::TITLE_TRUNCATE_LIMIT_CHARS);
-            })
-                ->onlyOnIndex(),
-
             Text::make(trans('laravel-nova-page-manager::page.title'), 'title')
+                ->displayUsing(function () {
+                    return Str::limit($this->resource->title, self::TITLE_TRUNCATE_LIMIT_CHARS);
+                })
                 ->rules('required', 'string', 'max:191')
-                ->sortable()
-                ->hideFromIndex(),
+                ->sortable(),
 
             Slug::make(trans('laravel-nova-menu::menu.slug'), 'slug')
                 ->from('title')
+                ->sortable()
                 ->creationRules('required', 'string', 'max:191', 'pageSlug', 'uniquePage:{{resourceLocale}}')
                 ->updateRules('required', 'string', 'max:191', 'pageSlug', 'uniquePage:{{resourceLocale}},{{resourceId}}'),
 
@@ -125,6 +123,7 @@ class Page extends Resource
 
             Select::make(trans('laravel-nova-page-manager::page.template'), 'template')
                 ->options($templates)
+                ->sortable()
                 ->rules('required', 'in:'.implode(',', array_keys($templates)))
                 ->readonly(fn () => $this->model()->exists),
 
