@@ -1,4 +1,4 @@
-# [2.0.0]
+# [4.0.0]
 
 In this version, the page manager introduces the use of the `laravel-nova-publishable` and `laravel-nova-translatable` libraries.
 
