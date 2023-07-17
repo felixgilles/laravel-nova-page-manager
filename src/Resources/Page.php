@@ -54,7 +54,7 @@ class Page extends Resource
      */
     public static $search = ['title'];
 
-    public static $with = ['translations'];
+    public static $with = ['translationsWithDeleted'];
 
     public function availableLocales(): array
     {
